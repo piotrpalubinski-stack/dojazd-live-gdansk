@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#081a2c">
+<meta name="description" content="Mapa bieżącego ruchu i czasu dojazdu z Nowego Portu w Gdańsku.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Dojazd Live · Gdańsk</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{color-scheme:dark;--bg:#071321;--panel:#0c2034;--line:#23415d;--text:#eef6ff;--muted:#a8bdd1;--blue:#56b6ff;--green:#19c37d;--amber:#ffb020;--red:#ff4d5f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:15px 16px 12px;background:linear-gradient(120deg,#0b2943,#081321);border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;justify-content:space-between}
+h1{font-size:20px;margin:0 0 3px}header p{margin:0;color:var(--muted);font-size:12px}.pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:6px 9px;white-space:nowrap}
+main{max-width:1400px;margin:auto}.toolbar{display:flex;gap:8px;flex-wrap:wrap;padding:12px;background:#091827;border-bottom:1px solid var(--line)}
+select,input,button{font:inherit;color:var(--text);background:#10283e;border:1px solid #31516c;border-radius:10px;padding:10px 12px;min-height:42px}
+select{flex:1;min-width:160px}input{min-width:0;flex:1}button{cursor:pointer;font-weight:650}button.primary{background:#087bc1;border-color:#1595e8}button:active{transform:scale(.99)}
+#map{height:55vh;min-height:360px;background:#0c1d2e}.status{padding:10px 14px;background:#0b1c2c;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px;min-width:0}.card small{display:block;color:var(--muted);font-size:11px}.card strong{font-size:22px;display:block;margin:5px 0}.card span{font-size:12px;color:var(--muted)}
+section{padding:0 12px 12px}.section-title{font-size:14px;margin:4px 0 9px}.route-list{display:grid;gap:8px}.route{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px}.route .name{flex:1;min-width:0}.route .name b{display:block}.route .name small{color:var(--muted)}.eta{font-weight:750;font-size:18px;white-space:nowrap}.subnote{font-size:11px;color:var(--muted);line-height:1.5;padding:0 14px 16px}
+#settings{display:none;padding:12px;background:#0a1a2a;border-bottom:1px solid var(--line)}#settings p{font-size:12px;color:var(--muted);line-height:1.5}.settingsrow{display:flex;gap:8px}#key{width:100%}.warn{color:#ffd18b!important}
+@media(min-width:900px){.layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(330px,1fr)}#map{height:calc(100vh - 205px);min-height:570px}.right{max-height:calc(100vh - 205px);overflow:auto}.cards{grid-template-columns:1fr}.toolbar{padding:12px 16px}}
+@media(max-width:480px){h1{font-size:18px}.pill{max-width:105px;white-space:normal;text-align:center}.cards{gap:7px;padding:9px}.card{padding:9px}.card strong{font-size:18px}#map{height:49vh;min-height:330px}.toolbar>*{flex-basis:100%}}
+</style>
+</head>
+<body>
+<header><div><h1>🚗 Dojazd Live · Gdańsk</h1><p>Start: Nowy Port · ruch drogowy i czasy tras</p></div><div class="pill" id="liveBadge">KONFIGURACJA WYMAGANA</div></header>
+<div class="toolbar">
+<select id="destination" aria-label="Cel podróży">
+<option value="54.3520,18.6466">Gdańsk Śródmieście</option>
+<option value="54.3906,18.6330">Wrzeszcz</option>
+<option value="54.4058,18.5700">Oliwa</option>
+<option value="54.3372,18.5660">Jasień</option>
+<option value="54.3094,18.5610">Kowale</option>
+<option value="54.3165,18.5350">Borkowo</option>
+<option value="54.2735,18.6360">Pruszcz Gdański</option>
+<option value="54.3270,18.5810">Straszyn</option>
+<option value="54.3480,18.7030">Stogi</option>
+<option value="54.2440,18.9360">Cedry Wielkie</option>
+</select>
+<button class="primary" id="routeBtn">Policz trasę</button><button id="refreshBtn">↻ Odśwież</button><button id="settingsBtn">⚙ API</button>
+</div>
+<div id="settings">
+<strong>Konfiguracja danych drogowych</strong>
+<p>Wklej klucz API TomTom. Usługa Traffic Flow udostępnia bieżące prędkości na drogach, a Routing API może uwzględniać ruch przy wyznaczaniu trasy. Klucz wpisany tutaj jest przechowywany lokalnie w tej przeglądarce. Ogranicz klucz w panelu dostawcy do dozwolonych domen i usług.</p>
+<div class="settingsrow"><input id="key" type="password" autocomplete="off" placeholder="TomTom API key"><button class="primary" id="saveKey">Zapisz</button></div>
+<p class="warn">Bez klucza mapa bazowa działa, ale nie pokazuje danych live. Ta statyczna wersja nie ma własnego serwera — do publicznego wdrożenia produkcyjnego zalecany jest backend, który chroni klucz API.</p>
+</div>
+<div class="status"><span id="statusText">Mapa bazowa · brak potwierdzonych danych live</span><span id="updated">Nie odświeżano</span></div>
+<main class="layout">
+<div id="map" aria-label="Mapa ruchu drogowego"></div>
+<div class="right">
+<div class="cards">
+<div class="card"><small>Wybrany cel</small><strong id="targetName">Śródmieście</strong><span>z Nowego Portu</span></div>
+<div class="card"><small>Czas trasy z ruchem</small><strong id="eta">—</strong><span id="etaDelta">Wymaga klucza API</span></div>
+<div class="card"><small>Odświeżanie</small><strong>5 min</strong><span>automatyczne, gdy karta jest aktywna</span></div>
+</div>
+<section><h2 class="section-title">Porównaj dojazd z Nowego Portu</h2><div id="routes" class="route-list"></div></section>
+<section><h2 class="section-title">Jak czytać mapę</h2><div class="card"><span>Warstwa ruchu pokazuje prędkość na drogach, nie koloruje całych dzielnic według czasu dojazdu. Czas do konkretnego punktu jest wyliczany oddzielnie przez API tras. Nie utożsamiamy braku danych z płynnym ruchem.</span></div></section>
+</div>
+</main>
+<div class="subnote">Źródła: OpenStreetMap (mapa bazowa) i TomTom Traffic/Routing po skonfigurowaniu klucza. Czasy tras są estymacjami dostawcy dla chwili zapytania, a nie gwarancją. Automatyczne odświeżanie działa, gdy strona pozostaje otwarta; iOS może wstrzymywać karty w tle.</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const START=[54.4034,18.6620]; // approximate public-area center of Nowy Port, not a user's location
+const DESTS=[
+{name:"Gdańsk Śródmieście",ll:[54.3520,18.6466]},
+{name:"Wrzeszcz",ll:[54.3906,18.6330]},
+{name:"Oliwa",ll:[54.4058,18.5700]},
+{name:"Jasień",ll:[54.3372,18.5660]},
+{name:"Kowale",ll:[54.3094,18.5610]},
+{name:"Borkowo",ll:[54.3165,18.5350]},
+{name:"Pruszcz Gdański",ll:[54.2735,18.6360]},
+{name:"Straszyn",ll:[54.3270,18.5810]},
+{name:"Stogi",ll:[54.3480,18.7030]},
+{name:"Cedry Wielkie",ll:[54.2440,18.9360]}
+];
+const $=id=>document.getElementById(id);
+let map, trafficLayer, routeLine, startMarker, destMarker;
+const nameFor=coords=>DESTS.find(d=>d.ll.join(",")===coords)?.name||"Wybrany cel";
+function getKey(){return localStorage.getItem("tomtom_key")||""}
+function fmt(sec){if(!Number.isFinite(sec))return "—";let m=Math.round(sec/60);return m<60?m+" min":Math.floor(m/60)+" h "+(m%60)+" min"}
+function initMap(){
+ map=L.map("map",{zoomControl:false}).setView([54.36,18.64],10);
+ L.control.zoom({position:"bottomright"}).addTo(map);
+ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+ startMarker=L.marker(START).addTo(map).bindPopup("Punkt startowy: Nowy Port");
+ destMarker=L.marker(DESTS[0].ll).addTo(map).bindPopup("Cel podróży");
+ renderRoutes();
+}
+function setStatus(msg,live=false){$("statusText").textContent=msg;$("liveBadge").textContent=live?"LIVE API":"BRAK LIVE";$("liveBadge").style.color=live?"#53e6a1":"#ffd18b"}
+function selectedDest(){let [lat,lon]=$("destination").value.split(",").map(Number);return {name:nameFor([lat,lon].join(",")),ll:[lat,lon]}}
+function updateSelectedLabel(){$("targetName").textContent=selectedDest().name}
+async function refreshTraffic(){
+ const key=getKey();
+ if(!key){setStatus("Mapa bazowa · wpisz klucz TomTom, aby włączyć dane live");$("updated").textContent="Brak danych live";return}
+ if(trafficLayer)map.removeLayer(trafficLayer);
+ // TomTom raster traffic-flow tiles; the traffic layer is only shown when an API key exists.
+ const url=`https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`;
+ trafficLayer=L.tileLayer(url,{opacity:.78,maxZoom:18,attribution:'Traffic © TomTom'}).addTo(map);
+ trafficLayer.on("tileerror",()=>setStatus("Błąd warstwy ruchu — sprawdź klucz i uprawnienia"));
+ setStatus("Pobieranie warstwy ruchu TomTom…");
+ await routeSelected(false);
+ $("updated").textContent="Sprawdzono: "+new Date().toLocaleTimeString("pl-PL");
+}
+async function routeSelected(fit=true){
+ const key=getKey();const dest=selectedDest();updateSelectedLabel();
+ destMarker.setLatLng(dest.ll).bindPopup("Cel: "+dest.name);
+ if(!key){$("eta").textContent="—";$("etaDelta").textContent="Wymaga klucza TomTom";setStatus("Brak danych live — mapa nie udaje ruchu na żywo");return}
+ const coords=`${START[0]},${START[1]}:${dest.ll[0]},${dest.ll[1]}`;
+ const url=`https://api.tomtom.com/routing/1/calculateRoute/${coords}/json?key=${encodeURIComponent(key)}&traffic=true&routeType=fastest&travelMode=car&departAt=now`;
+ try{
+  const r=await fetch(url);if(!r.ok)throw new Error("HTTP "+r.status);
+  const data=await r.json();const route=data.routes?.[0];if(!route)throw new Error("Brak trasy");
+  const sec=route.summary?.travelTimeInSeconds;
+  $("eta").textContent=fmt(sec);$("etaDelta").textContent="Wyliczenie z ruchem · TomTom";
+  const pts=(route.legs||[]).flatMap(l=>(l.points||[]).map(p=>[p.latitude,p.longitude]));
+  if(routeLine)map.removeLayer(routeLine);
+  if(pts.length)routeLine=L.polyline(pts,{color:"#4ab8ff",weight:5,opacity:.9}).addTo(map);
+  if(fit&&pts.length)map.fitBounds(routeLine.getBounds().pad(.12));
+  setStatus("Dane tras z API · ruch uwzględniany przez dostawcę",true);
+  $("updated").textContent="Ostatnie zapytanie: "+new Date().toLocaleTimeString("pl-PL");
+ }catch(e){$("eta").textContent="Błąd";$("etaDelta").textContent="Nie udało się pobrać czasu";setStatus("Brak potwierdzonych danych live: "+e.message);$("updated").textContent="Ostatnia próba: "+new Date().toLocaleTimeString("pl-PL")}
+}
+async function renderRoutes(){
+ const root=$("routes");root.innerHTML="";
+ for(const d of DESTS){
+  const el=document.createElement("div");el.className="route";
+  el.innerHTML=`<div class="name"><b>${d.name}</b><small>Samochód · z Nowego Portu</small></div><div class="eta" id="eta-${d.name.replace(/[^a-z0-9]/gi,"")}">—</div><button aria-label="Pokaż ${d.name}">↗</button>`;
+  el.querySelector("button").onclick=()=>{$("destination").value=d.ll.join(",");updateSelectedLabel();map.setView(d.ll,12);routeSelected(true)};
+  root.appendChild(el);
+ }
+}
+async function refreshAll(){
+ await refreshTraffic();
+ const key=getKey();if(!key)return;
+ // Query all selected comparison destinations; sequential requests to avoid burst traffic.
+ for(const d of DESTS){
+  const coords=`${START[0]},${START[1]}:${d.ll[0]},${d.ll[1]}`;
+  try{
+   const u=`https://api.tomtom.com/routing/1/calculateRoute/${coords}/json?key=${encodeURIComponent(key)}&traffic=true&routeType=fastest&travelMode=car&departAt=now`;
+   const r=await fetch(u);if(!r.ok)continue;const j=await r.json();const sec=j.routes?.[0]?.summary?.travelTimeInSeconds;
+   const id="eta-"+d.name.replace(/[^a-z0-9]/gi,"");const el=$(id);if(el)el.textContent=fmt(sec);
+  }catch(_){}
+ }
+}
+$("settingsBtn").onclick=()=>{$("settings").style.display=$("settings").style.display==="block"?"none":"block";$("key").value=getKey()};
+$("saveKey").onclick=()=>{const k=$("key").value.trim();if(k)localStorage.setItem("tomtom_key",k);else localStorage.removeItem("tomtom_key");$("settings").style.display="none";refreshAll()};
+$("refreshBtn").onclick=refreshAll;
+$("routeBtn").onclick=()=>routeSelected(true);
+$("destination").onchange=()=>{updateSelectedLabel();routeSelected(true)};
+initMap();updateSelectedLabel();
+if(getKey())refreshAll();else setStatus("Mapa bazowa działa · klucz API wymagany do ruchu live");
+setInterval(()=>{if(document.visibilityState==="visible")refreshAll()},300000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")$("updated").textContent="Karta aktywna · odświeżanie co 5 min"});
+if("serviceWorker" in navigator && location.protocol.startsWith("http"))navigator.serviceWorker.register("./sw.js").catch(()=>{});
+</script>
+</body></html>
